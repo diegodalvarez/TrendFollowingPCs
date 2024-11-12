@@ -9,7 +9,6 @@ import os
 import numpy as np
 import pandas as pd
 
-from sklearn.decomposition import PCA
 from TreasuryDataCollect import TreasuryDataCollect
 
 class Backtest(TreasuryDataCollect):
@@ -19,6 +18,7 @@ class Backtest(TreasuryDataCollect):
         super().__init__()
         self.rtn_path    = os.path.join(self.data_path, "SignalRtn")
         self.signal_path = os.path.join(self.data_path, "Signals")
+        self.pc_path     = r"C:\Users\Diego\Desktop\app_prod\research\TrendFollowingPCs\data\PCAData"
         
         if os.path.exists(self.rtn_path) == False: os.makedirs(self.rtn_path)
         
@@ -154,5 +154,113 @@ class Backtest(TreasuryDataCollect):
         
         return df_signal
     
+    def _get_ewmac_signal_loadings(self) -> pd.DataFrame: 
+        
+        signal_loading_path = os.path.join(self.signal_path, "SignalSign.csv")
+        df_signal           = pd.read_csv(filepath_or_buffer = signal_loading_path)
+        
+        ewmac_path = os.path.join(self.signal_path, "EWMACSignals.parquet")
+        df_ewmac   = (pd.read_parquet(
+            path = ewmac_path, engine = "pyarrow").
+            drop(columns = ["lag_decile", "value"]).
+            assign(
+                pc_group = lambda x: x.variable.str.split(" ").str[0],
+                pc_level = lambda x: x.variable.str.split(" ").str[1]).
+            drop(columns = ["signal_type"]).
+            merge(
+                right = df_signal.query("signal_type == 'EWMAC'"), 
+                how   = "inner", 
+                on    = ["pc_group", "pc_level"]).
+            drop(columns = ["pc_group", "pc_level"]).
+            assign(lag_signal = lambda x: np.sign(x.pc_sign) * x.lag_signal).
+            drop(columns = ["pc_sign"]))
+        
+        return df_ewmac
     
-#df = Backtest().implied_signal_rtn(verbose = True)
+    def _get_ewma_signal_loadings(self) -> pd.DataFrame:
+        
+        signal_loading_path = os.path.join(self.signal_path, "SignalSign.csv")
+        df_signal           = pd.read_csv(filepath_or_buffer = signal_loading_path)
+        
+        ewma_path = os.path.join(self.signal_path, "EWMASignals.parquet")
+        df_ewma   = (pd.read_parquet(
+            path = ewma_path, engine = "pyarrow").
+            drop(columns = ["lag_decile", "value"]).
+            assign(
+                pc_group = lambda x: x.variable.str.split(" ").str[0],
+                pc_level = lambda x: x.variable.str.split(" ").str[1]).
+            drop(columns = ["signal_type"]).
+            merge(
+                right = df_signal.query("signal_type == 'EWMA'"), 
+                how   = "inner", 
+                on    = ["pc_group", "pc_level"]).
+            drop(columns = ["pc_group", "pc_level"]).
+            assign(lag_signal = lambda x: np.sign(x.pc_sign) * x.lag_signal).
+            drop(columns = ["pc_sign"]))
+        
+        return df_ewma
+    
+    def _get_kalman_signal_loadings(self) -> pd.DataFrame: 
+    
+        signal_loading_path = os.path.join(self.signal_path, "SignalSign.csv")
+        df_signal           = pd.read_csv(filepath_or_buffer = signal_loading_path)
+        
+        kalman_path = os.path.join(self.signal_path, "KalmanSignals.parquet")
+        df_out = (pd.read_parquet(
+            path = kalman_path, engine = "pyarrow").
+            assign(
+                pc_group = lambda x: x.variable.str.split(" ").str[0],
+                pc_level = lambda x: x.variable.str.split(" ").str[1]).
+            drop(columns = ["lag_decile"]).
+            merge(
+                right = df_signal, 
+                how   = "inner", 
+                on    = ["pc_level", "pc_group", "signal_type"]).
+            drop(columns = ["pc_level", "pc_group"]).
+            assign(lag_signal = lambda x: np.sign(x.pc_sign) * x.lag_signal).
+            drop(columns = ["pc_sign"]))
+        
+        return df_out
+    
+    def get_signal(self, verbose: bool = False) -> pd.DataFrame: 
+        
+        file_path = os.path.join(self.rtn_path, "SignalReturns.parquet")
+        try:
+            
+            if verbose == True: print("Searching for signals data")
+            df_out = pd.read_parquet(path = file_path, engine = "pyarrow")
+            if verbose == True: print("Found Data\n")
+            
+        except:
+            
+            if verbose == True: print("Generating Data")
+        
+            df_ewma   = self._get_ewma_signal_loadings()
+            df_ewmac  = self._get_ewmac_signal_loadings()
+            df_kalman = self._get_kalman_signal_loadings()
+            
+            df_combined = (pd.concat([
+                df_ewma,
+                df_ewmac,
+                df_kalman]))
+            
+            df_fut = (self.get_tsy_fut()[
+                ["date", "security", "PX_bps"]].
+                assign(security = lambda x: x.security.str.split(" ").str[0]))
+            
+            df_out = (df_combined.merge(
+                right = df_fut, how = "inner", on = ["date"]).
+                assign(strat_name = lambda x: x.strat_name.astype(str)))
+            
+            df_out.to_parquet(path = file_path, engine = "pyarrow")
+            if verbose == True: print("Saving data\n")
+            
+        df_out.to_parquet(path = file_path, engine = "pyarrow")
+        
+    
+def main():
+    
+    Backtest().get_signal(verbose = True)
+    Backtest().implied_signal_rtn(verbose = True)
+    
+if __name__ == "__main__": main()
