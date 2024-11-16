@@ -338,8 +338,8 @@ class SignalGenerator(TreasuryDataCollect):
             
 def main() -> None: 
     
-    SignalGenerator().get_yld_kalman_zscore()
-    SignalGenerator().get_pc_spread_zscore()
+    SignalGenerator().get_yld_kalman_zscore(verbose = True)
+    SignalGenerator().get_pc_spread_zscore(verbose = True)
     SignalGenerator().get_pc_spread_ewmac(verbose = True)
     SignalGenerator().get_pc_spread_ewma(verbose = True)
     SignalGenerator().get_pc_spread_signal(verbose = True)        
