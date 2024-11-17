@@ -153,7 +153,7 @@ class PCBacktest(SignalGenerator):
                     "strat_name": "param",
                     "lag_signal": "signal"}).
                 assign(
-                    strat_group = "PCSpreadEWMAC",
+                    strat_group = "PCSpreadEWMA",
                     strat_name  = lambda x: x.variable + "_PCSpreadEWMAC_" + x.param,
                     date        = lambda x: pd.to_datetime(x.date).dt.date))
 
@@ -187,10 +187,15 @@ class PCBacktest(SignalGenerator):
                 assign(signal_bps = lambda x: np.where(
                     x.variable == "PC2", 
                     np.sign(x.signal) * x.PX_bps,
-                    -1 * np.sign(x.signal) * x.PX_bps)))
+                    -1 * np.sign(x.signal) * x.PX_bps),
+                    strat_group = "PCSpread",
+                    param       = "1",
+                    strat_name  = "PCSpread"))
             
             if verbose == True: print("Saving data")
             df_out.to_parquet(path = file_path, engine = "pyarrow")
+            
+        return df_out
 
 def main():
     
